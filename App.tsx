@@ -8,6 +8,23 @@ interface Message {
   text: string;
 }
 
+// Helper to safely access API key in various environments (Vite, CRA, Node, raw ESM)
+const getApiKey = () => {
+  try {
+    // Check standard Node/CRA env
+    if (typeof process !== 'undefined' && process.env?.API_KEY) {
+      return process.env.API_KEY;
+    }
+    // Check Vite env (common on Vercel)
+    if (typeof import.meta !== 'undefined' && (import.meta as any).env?.VITE_API_KEY) {
+      return (import.meta as any).env.VITE_API_KEY;
+    }
+  } catch (e) {
+    console.warn("Error accessing environment variables:", e);
+  }
+  return undefined;
+};
+
 const App: React.FC = () => {
   const [messages, setMessages] = useState<Message[]>([
     {
@@ -30,18 +47,20 @@ const App: React.FC = () => {
   }, [messages, isLoading]);
 
   useEffect(() => {
+    const apiKey = getApiKey();
+
     // Security & Configuration Check
-    if (!process.env.API_KEY) {
+    if (!apiKey) {
       setMessages(prev => [...prev, {
         id: 'system-error',
         role: 'model',
-        text: "⚠️ Configuration Missing: API Key not found.\n\nSince you are deploying this app, please ensure you have set the `API_KEY` environment variable in your Vercel project settings.\n\n1. Go to Vercel Settings -> Environment Variables\n2. Add Key: API_KEY\n3. Add Value: Your Google Gemini API Key"
+        text: "⚠️ Configuration Missing: API Key not found.\n\nSince you are deploying to Vercel, please check your Environment Variables.\n\n1. Go to Vercel Project Settings -> Environment Variables\n2. Add Key: `API_KEY` (or `VITE_API_KEY` if using Vite)\n3. Add Value: Your Google Gemini API Key\n4. Redeploy."
       }]);
       return;
     }
 
     try {
-      const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+      const ai = new GoogleGenAI({ apiKey: apiKey });
       chatRef.current = ai.chats.create({
         model: 'gemini-2.5-flash',
         config: {
@@ -59,8 +78,8 @@ const App: React.FC = () => {
 
     // Graceful handling if chat is not initialized (e.g. missing key)
     if (!chatRef.current) {
-        if (!process.env.API_KEY) {
-           // Alert is already shown by useEffect, but strictly prevent sending
+        if (!getApiKey()) {
+           // Alert is already shown by useEffect
            return;
         }
         // Attempt re-initialization or show error
